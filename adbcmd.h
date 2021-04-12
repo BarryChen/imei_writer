@@ -10,6 +10,7 @@ class AdbCmd : public BaseProcess
     Q_OBJECT
 public:
     AdbCmd();
+    void AdbSwUsb();
 
 public slots:
     void AdbCmdStdOut();

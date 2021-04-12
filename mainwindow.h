@@ -3,9 +3,10 @@
 
 #include <QMainWindow>
 #include <QTimer>
-#include "adbwatch.h"
+#include "formabout.h"
 #include "adbcmd.h"
 #include "serialwriter.h"
+#include "statusmachine.h"
 
 
 QT_BEGIN_NAMESPACE
@@ -25,21 +26,15 @@ protected:
     bool nativeEvent(const QByteArray &eventType, void *message, long *result);
 
 private:
-    AdbWatch        *mAdbWatch;//Adb连接状态守护程序
-    AdbCmd          *mAdbCmd;//Adb命令程序
-    SerialWriter    *mWriter;//串口写串号程序
-    bool        mUsbIsConnected;
-    bool        mAdbIsConnected;
+    StatusMachine   *mStatusMachine;
     bool        mSerialIsConnected;
-    bool        mWritting;//指示正在烧写
+    QString     mSn;
+    QString     mImei;
+    QTimer      *mWaitTimer;
+    FormAbout   *fm;
 
-    void InitAdbWatch();
-
-    void StartAdbCmd();    
-    void EndAdbCmd();
-
-    void StartSerialWriter();
-    void StopSerialWriter();
+//    void StartSerialWriter();
+//    void StopSerialWriter();
 
     Ui::MainWindow *ui;
 
@@ -47,14 +42,20 @@ public slots:
     void AdbConnect();
     void AdbDisconnect();
     void NextLineEdit();
-    void GetSerialInfo(QStringList &s);
+    void SerialConnected();
+    void UsbStatusChanged(USB_STATUS status);
 
-
+    void WaitTimerUpdate();
+    void slotImeiSn(QString data);
 
 private slots:
     void on_pushButton_run_clicked();
     void on_action_adbPath_triggered();
     void on_action_run_triggered();
-    void ConnectStateLoop();
+
+    void on_action_about_triggered();
+
+signals:
+    void postSerialSnImei(QString sn, QString imei);
 };
 #endif // MAINWINDOW_H

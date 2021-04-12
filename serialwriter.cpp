@@ -1,23 +1,13 @@
 #include "serialwriter.h"
 #include <QtSerialPort/QSerialPortInfo>
 #include <QTimer>
+#include <QThread>
 
 SerialWriter::SerialWriter()
 {
-    this->mExistPort.clear();
     this->mSerial = new QSerialPort(this);
-
-    foreach(const QSerialPortInfo &info, QSerialPortInfo::availablePorts())
-    {
-        qDebug() <<"name        :" << info.portName();
-        qDebug() <<"description :" << info.description();
-        if(info.description() == "LeadCore CMCC AT Interface")
-            this->mExistPort << info.portName();
-    }
-    QTimer::singleShot(20, this, SLOT(SerialPostInfo()));
-    SerialOpen(*this->mExistPort.begin());
+    qDebug() << "new QSerialPort";
 }
-
 
 SerialWriter::~SerialWriter()
 {
@@ -30,16 +20,7 @@ SerialWriter::~SerialWriter()
     this->mSerial = nullptr;
 }
 
-void SerialWriter::SerialPostInfo()
-{
-    if(!this->mExistPort.isEmpty())
-    {
-        qDebug() << "postserialinfo";
-        emit PostSerialInfo(this->mExistPort);
-    }
-}
-
-void SerialWriter::SerialOpen(QString &name)
+int SerialWriter::SerialOpen(QString &name)
 {
     if(this->mSerial->isOpen())
     {
@@ -50,8 +31,9 @@ void SerialWriter::SerialOpen(QString &name)
     if(!this->mSerial->open(QIODevice::ReadWrite))  	//打开串口
     {
         qDebug() << "open serial error:" << name;
-        return;
+        return -1;
     }
+    this->mSerial->setDataTerminalReady(true);
     this->mSerial->setBaudRate(4000000);   //设置波特率
     this->mSerial->setDataBits(QSerialPort::Data8);  //设置数据位数
     this->mSerial->setParity(QSerialPort::NoParity); 	//设置奇偶校验
@@ -59,31 +41,63 @@ void SerialWriter::SerialOpen(QString &name)
     this->mSerial->setFlowControl(QSerialPort::NoFlowControl);	//设置流控制
 
     connect(this->mSerial, SIGNAL(readyRead()), this, SLOT(SerialReceive()));
-    //WriteSnImei();
-
+    qDebug() << "open serial ok";
+    return 0;
 }
 
 void SerialWriter::SerialReceive()
 {
     QString data = this->mSerial->readAll();
+    QStringList list = data.split("\r\n");
+    
+    for(int i = 0; i< list.size(); ++i)
+    {
+        QString tmp = list.at(i);
+        if(tmp.contains("^DMSN"))
+        {
+            qDebug() << "###sn###:"<< "读取当前的SN为:" + tmp.right(tmp.size()-7);
+            emit postImeiSn("读取当前的SN为:" + tmp.right(tmp.size()-7));
+        }
+        if(tmp.startsWith("^DGSN"))
+        {
+            qDebug() << "###imei###:"<< "读取当前的IMEI为:" + tmp.right(tmp.size()-7);
+            emit postImeiSn("读取当前的IMEI为:" + tmp.right(tmp.size()-7));
+        }
+    }
+
+    
     qDebug() << data;
 }
 
-void SerialWriter::WriteSnImei(const QString sn, const QString imei)
+void SerialWriter::WriteSnImei(QString port, const QString sn, const QString imei)
 {
+    if(SerialOpen(port) < 0)
+        return;
+
     //sn:    AT^DMSN=QXTXV320200600041
     //imei:  AT^DCGSNW=863220040000630
-    if(sn.isEmpty() || imei.isEmpty())
-        return;
+//    if(sn.isEmpty() || imei.isEmpty())
+//        return;
 
     QString end = "\r\n";
     QString buff = "AT\r\n";
     QString sn_cmd = "AT^DMSN=" + sn + end;
     QString imei_cmd = "AT^DCGSNW=" + imei + end;
 
+    QString sn_query = "AT^DMSN" + end;
+    QString imei_query = "AT^DGSN?" + end;
+
     qDebug() << sn_cmd.toLatin1().data() << "sn_cmd size:" << sn_cmd.size();
     if(this->mSerial->isOpen() && this->mSerial->isWritable())
     {
+//         qDebug("will write at");
+//        if(this->mSerial->write(buff.toLatin1().data(), buff.size()) > 0)
+//        {
+//            qDebug("write sn success");
+//        }
+//        while(!this->mSerial->waitForBytesWritten());
+//        QThread::msleep(2000);
+
         if(this->mSerial->write(sn_cmd.toLatin1().data(), sn_cmd.size()) > 0)
         {
             qDebug("write sn success");
@@ -95,9 +109,25 @@ void SerialWriter::WriteSnImei(const QString sn, const QString imei)
             qDebug("write imei success");
         }
         while(!this->mSerial->waitForBytesWritten());
-    }
 
-    this->mSerial->clear();
-    this->mSerial->close();
+
+        //写完后查询下是否成功
+        if(this->mSerial->write(sn_query.toLatin1().data(), sn_query.size()) > 0)
+        {
+            qDebug("write query sn success .... ");
+        }
+        while(!this->mSerial->waitForBytesWritten());
+
+        if(this->mSerial->write(imei_query.toLatin1().data(), imei_query.size()) > 0)
+        {
+            qDebug("write query imei success ...");
+        }
+        while(!this->mSerial->waitForBytesWritten());
+    }
+    //QThread::msleep(2000);
+
+
+    //this->mSerial->clear();
+    //this->mSerial->close();
     //
 }

@@ -15,6 +15,7 @@ BaseProcess::~BaseProcess()
 
 void BaseProcess::killProcess()
 {
+     //qDebug() << "process status is " << mProcess->state();
     if(mProcess->state() == QProcess::Running)
     {
         mProcess->kill();

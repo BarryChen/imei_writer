@@ -12,21 +12,20 @@ public:
     SerialWriter();
     ~SerialWriter();
 
-    void WriteSnImei(const QString sn, const QString imei);
+    void WriteSnImei(QString port, const QString sn, const QString imei);
 
 private:
-    QStringList mExistPort;
     QSerialPort *mSerial;
 
-    void SerialOpen(QString &name);
-
+    int SerialOpen(QString &name);
+signals:
+    void postImeiSn(QString num);
 
 public slots:
-    void SerialPostInfo();
     void SerialReceive();
 
 signals:
-    void PostSerialInfo(QStringList&);
+
 };
 
 #endif // WRITERPROCESS_H

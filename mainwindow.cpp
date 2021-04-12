@@ -9,139 +9,144 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
-    this->mAdbCmd   = nullptr;
-    this->mAdbWatch = nullptr;
-    this->mWriter   = nullptr;
-    InitAdbWatch();
-    this->mAdbIsConnected = false;
-    this->mUsbIsConnected = false;
+    this->mStatusMachine = nullptr;
+    this->mWaitTimer = nullptr;
     this->mSerialIsConnected = false;
-    //InitWriterProcess();
-
-    this->mWritting = false;
+    this->fm = nullptr;
 
     ui->setupUi(this);
-    ui->label_state->setText("USB连接状态：未连接");
-    ui->label_cp_uart ->setText("CP串口: 未连接");
-    ui->lineEdit_sn->setFocus();
+    this->setWindowFlag(Qt::WindowMaximizeButtonHint); //隐藏最大化，方式一
+    //this->setWindowFlags(this->windowFlags()& ~Qt::WindowMaximizeButtonHint);//隐藏最大化，方式二
+    this->setAttribute(Qt::WA_QuitOnClose, true); //主窗口退出时，其他子窗口也退出
+    this->setMinimumSize(460, 700);//固定窗口大小
+    this->setMaximumSize(460, 700);
+
+    setTabOrder(this->ui->lineEdit_sn, this->ui->lineEdit_imei);
+    setTabOrder(this->ui->lineEdit_imei, this->ui->pushButton_run);
+    setTabOrder(this->ui->pushButton_run, this->ui->lineEdit_sn);
+
     connect(ui->lineEdit_sn, SIGNAL(returnPressed()), this, SLOT(NextLineEdit()));
     connect(ui->lineEdit_imei, SIGNAL(returnPressed()), this, SLOT(NextLineEdit()));
 
-    QTimer::singleShot(1000, this, SLOT(ConnectStateLoop()));
+    this->show();//设置focus之前需要show一下，否则会被生效
+
+    ui->lineEdit_sn->setFocus();
+    ui->lineEdit_sn->selectAll();
+
+    this->mStatusMachine = new StatusMachine(this);
+    connect(this->mStatusMachine, SIGNAL(onSmSerialConnected()), this, SLOT(SerialConnected()));
+    connect(this->mStatusMachine, SIGNAL(onUsbStatusChanged(USB_STATUS)), this, SLOT(UsbStatusChanged(USB_STATUS)));
+
+    this->mWaitTimer = new QTimer(this);
+    connect(this->mWaitTimer, SIGNAL(timeout()), this, SLOT(WaitTimerUpdate()));
+
+    connect(this->mStatusMachine->mSerialWriter, SIGNAL(postImeiSn(QString)), this, SLOT(slotImeiSn(QString)));
+
+
 
 }
 
+
 MainWindow::~MainWindow()
 {
-
-    if(this->mAdbWatch != nullptr) {
-        qDebug() << "will delete adbwatch";
-        delete this->mAdbWatch;
-        this->mAdbWatch = nullptr;
+    if(this->fm != nullptr) {
+        delete this->fm;
     }
-    if(this->mAdbCmd != nullptr) {
-        qDebug() << "will delete adbcmd" ;
-        delete this->mAdbCmd;
-        this->mAdbCmd = nullptr;
-    }
-
-    if(this->mWriter != nullptr) {
+    if(this->mStatusMachine != nullptr) {
         qDebug() << "will delete mWriter" ;
-        delete this->mWriter;
-        this->mWriter = nullptr;
+        delete this->mStatusMachine;
+        this->mStatusMachine = nullptr;
     }
 
+    if(this->mWaitTimer != nullptr) {
+        qDebug() << "will delete mWaitTimer" ;
+        delete this->mWaitTimer;
+        this->mWaitTimer = nullptr;
+    }
 
     delete ui;
 }
 
-void MainWindow::StartSerialWriter()
+void MainWindow::slotImeiSn(QString data)
 {
-    if(this->mWriter != nullptr) {
-        this->mWriter = new SerialWriter();
-        connect(this->mWriter, SIGNAL(PostSerialInfo(QStringList &)), this, SLOT(GetSerialInfo(QStringList &)));
-    } else
-        qDebug("请析构SerialWriter");
-
+    this->ui->textEdit->append(data);
+    this->ui->textEdit->append("================================");
 }
 
-void MainWindow::StopSerialWriter()
+void MainWindow::SerialConnected()
 {
-    if(this->mWriter != nullptr) {
-       disconnect(this->mWriter, SIGNAL(PostSerialInfo(QStringList &)), this, SLOT(GetSerialInfo(QStringList &)));
-       delete this->mWriter;
-       this->mWriter = nullptr;
-    } else
-        qDebug("已经结束了SerialWriter");
-
+   this->mSerialIsConnected = true;
 }
 
-
-void MainWindow::GetSerialInfo(QStringList &s)
+void MainWindow::UsbStatusChanged(USB_STATUS status)
 {
-    if(!s.isEmpty()) {
-        QStringList data;
-        data << "CP串口:";
-        data << *s.begin();
-        qDebug() << "getsetialinfo";
-        ui->label_cp_uart->setText(data.join(" "));
-    }
-}
-
-void MainWindow::StartAdbCmd()
-{
-    qDebug() << "StartAdbCmd" ;
-    if(this->mAdbCmd == nullptr)
-        this->mAdbCmd = new AdbCmd();
-}
-
-void MainWindow::EndAdbCmd()
-{
-    if(this->mAdbCmd != nullptr)
-    {
-        delete this->mAdbCmd;
-        this->mAdbCmd = nullptr;
-    }
-}
-
-void MainWindow::InitAdbWatch()
-{
-    this->mAdbWatch = new AdbWatch();
-    connect(this->mAdbWatch, SIGNAL(onUsbConnect()), this, SLOT(AdbConnect()));
-    connect(this->mAdbWatch, SIGNAL(onUsbDisconnect()), this, SLOT(AdbDisconnect()));
-
+   if(status == STATUS_ADB_CONNECTED)
+   {
+       this->ui->textEdit->append("当前USB状态为“ADB连接状态”");
+   }
+   else if(status == STATUS_ADB_DISCONNECTED)
+   {
+       this->ui->textEdit->append("当前USB状态为“ADB断开状态”");
+   }
+   else if(status == STATUS_SERIAL_CONNECTED)
+   {
+       this->ui->textEdit->append("当前USB状态为“串口连接状态”");
+       on_pushButton_run_clicked();
+   }
+   else if(status == STATUS_SERIAL_DISCONNECTED)
+   {
+       this->ui->textEdit->append("当前USB状态为“串口断开状态”");
+   }
 }
 
 void MainWindow::AdbConnect()
 {
-    ui->label_state->setText("USB连接状态：已经连接到AP");
-    this->mAdbIsConnected = true;
-    StartAdbCmd();
+    //ui->label_state->setText("USB连接状态：已经连接到AP");
 }
 
 void MainWindow::AdbDisconnect()
 {
-    ui->label_state->setText(("USB连接状态：未连接"));
-    this->mAdbIsConnected = false;
+   // ui->label_state->setText(("USB连接状态：未连接"));
 }
 
 void MainWindow::NextLineEdit()
 {
-    if(ui->lineEdit_sn->hasFocus()){
+    if(ui->lineEdit_sn->hasFocus())
+    {
         ui->lineEdit_imei->setFocus();
-    } else if(ui->lineEdit_imei->hasFocus()){
-        ui->pushButton_run->setFocus();
+        ui->lineEdit_imei->selectAll();
+    }
+    else if(ui->lineEdit_imei->hasFocus())
+    {
+        ui->lineEdit_sn->setFocus();
+        ui->lineEdit_sn->selectAll();
         ui->pushButton_run->setDefault(true);
-    } else if(ui->pushButton_run->hasFocus()){
         on_pushButton_run_clicked();
     }
-
 }
 
+/***
+  *判断一个字符串是否为纯数字
+  */
+static bool isDigitStr(QString src)
+{
+    QByteArray ba = src.toLatin1();//QString 转换为 char*
+     const char *s = ba.data();
+
+    while(*s && *s>='0' && *s<='9') s++;
+
+    if (*s)
+    { //不是纯数字
+        return false;
+    }
+    else
+    { //纯数字
+        return true;
+    }
+}
 
 void MainWindow::on_pushButton_run_clicked()
 {
-
     QString sn = ui->lineEdit_sn->text().trimmed();
     int len_sn = sn.count();
     QString imei = ui->lineEdit_imei->text().trimmed();
@@ -155,22 +160,38 @@ void MainWindow::on_pushButton_run_clicked()
 
     //test
     //StartWriterProcess(sn, imei);
-
+    qDebug() << "sn rigit4:"<< sn.right(7);
     if(snIsOk && imeiIsOk)
     {
-        if(sn.startsWith("QXTX")) {
-            ui->pushButton_run->setText("号码输入有误");
+        if(!sn.startsWith("QXTX") ||
+                !isDigitStr(sn.right(7)) ||
+                !isDigitStr(imei)) {
+            this->mWaitTimer->stop();
+            this->ui->textEdit->append("输出信息：<输入号码有误>");
             return;
         }
-        if(this->mUsbIsConnected == false) {
-            ui->pushButton_run->setText("没有检测到USB");
-            //return;
-        }
-        ui->pushButton_run->setText("正在烧入");
-        //TODO
-        //切换usb到cp
-        //this->mWritting = true;
 
+        this->mSn = sn;
+        this->mImei = imei;
+        if(this->mSerialIsConnected)
+        {
+            this->mStatusMachine->SMWriteSnImei(sn, imei);
+        }
+        else
+        {
+            this->mWaitTimer->start(500);
+            this->ui->textEdit->append("输出信息：<等待串口连接中>");
+        }
+    }
+}
+
+void MainWindow::WaitTimerUpdate()
+{
+    qDebug() << "wait timer update";
+    if(this->mSerialIsConnected)
+    {
+        this->mWaitTimer->stop();
+        this->mStatusMachine->SMWriteSnImei(this->mSn, this->mImei);
     }
 }
 
@@ -184,17 +205,14 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *r
         if(msg->wParam == DBT_DEVICEARRIVAL)
         {
             qDebug("usb in");
-            this->mUsbIsConnected = true;
         }
         if(msg->wParam == DBT_DEVICEREMOVECOMPLETE)
         {
             qDebug("usb out");
-            this->mUsbIsConnected = false;
         }
     }
     return QWidget::nativeEvent(eventType, message, result);
 }
-
 
 void MainWindow::on_action_adbPath_triggered()
 {
@@ -206,14 +224,11 @@ void MainWindow::on_action_run_triggered()
 
 }
 
-void MainWindow::ConnectStateLoop()
-{
-    if(this->mUsbIsConnected && this->mAdbIsConnected) {
-        StartAdbCmd();
-    } else if(this->mUsbIsConnected && !this->mAdbIsConnected) {
-        EndAdbCmd();
-        StartSerialWriter();
-    }
 
-    QTimer::singleShot(1000, this, SLOT(ConnectStateLoop()));
+
+
+void MainWindow::on_action_about_triggered()
+{
+    this->fm = new FormAbout;
+    fm->show();
 }

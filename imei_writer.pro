@@ -1,6 +1,8 @@
 
 QT       += core gui serialport
 
+RC_ICONS = qxtx.ico
+
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++11
@@ -18,24 +20,36 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 
 SOURCES += main.cpp \
+    adbpath.cpp \
+    formabout.cpp \
     mainwindow.cpp \
     adbcmd.cpp \
     adbwatch.cpp \
     baseprocess.cpp \
-    serialwriter.cpp
+    serialwatch.cpp \
+    serialwriter.cpp \
+    statusmachine.cpp
 
 
 HEADERS  += mainwindow.h \
     adbcmd.h \
+    adbpath.h \
     adbwatch.h \
     baseprocess.h \
-    serialwriter.h
+    formabout.h \
+    serialwatch.h \
+    serialwriter.h \
+    statusmachine.h
 
 
-FORMS    += mainwindow.ui
+FORMS    += mainwindow.ui \
+    formabout.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+RESOURCES += \
+    adb.qrc
 

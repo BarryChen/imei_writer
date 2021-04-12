@@ -3,6 +3,10 @@
 
 AdbCmd::AdbCmd()
 {
+}
+
+void AdbCmd::AdbSwUsb()
+{
 #ifdef Q_OS_WIN32
     QString cmd = "adb.exe";
 #else
@@ -11,11 +15,12 @@ AdbCmd::AdbCmd()
 
     QStringList opt;
     opt << "shell";
-    opt << "\"echo 1 > /sys/sta_misc/usb_sw_cp\"";
+    opt << "echo 1 > /sys/sta_misc/usb_sw_cp";
 
     connect(this->mProcess, SIGNAL(readyReadStandardOutput()), this, SLOT(AdbCmdStdOut()));
     connect(this->mProcess, SIGNAL(readyReadStandardError()), this, SLOT(AdbCmdStdErr()));
     ExeCmd(cmd, opt);
+    qDebug() << "adb switch usb to cp" << opt.join(" ");
 }
 
 void AdbCmd::AdbCmdStdOut()

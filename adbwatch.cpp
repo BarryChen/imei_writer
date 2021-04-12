@@ -1,11 +1,24 @@
 #include "adbwatch.h"
-
+#include <QThread>
+#include <QFile>
+#include <QDir>
 
 AdbWatch::AdbWatch()
 {
     this->mTimer = nullptr;
+    this->mServerIsStart = false;
+    qDebug() << "adb watch";
     connect(this->mProcess, SIGNAL(readyReadStandardOutput()), this, SLOT(AdbWatchStdOut()));
     connect(this->mProcess, SIGNAL(readyReadStandardError()), this, SLOT(AdbWatchStdErr()));
+    connect(this->mProcess, SIGNAL(finished(int)), this, SLOT(AdbProFinished()));
+
+    //将内置的adb文件拷贝出来
+    CopyFile("adb.exe");
+    CopyFile("AdbWinApi.dll");
+    CopyFile("AdbWinUsbApi.dll");
+
+    //一般电脑没使用过adb的，adb服务不会默认开启，此处要先开启服务
+    StartAdbService();
     InitTimer();
 
 }
@@ -52,6 +65,13 @@ void AdbWatch::AdbWatchStdErr()
     qDebug() << "adb watch:" << data;
 }
 
+void AdbWatch::AdbProFinished()
+{
+    //qDebug() << "service is start";
+    this->mServerIsStart = true;
+}
+
+
 void AdbWatch::InitTimer()
 {
     this->mTimer = new QTimer(this);
@@ -59,23 +79,53 @@ void AdbWatch::InitTimer()
     this->mTimer->start(1000);
 }
 
-void AdbWatch::StartAdbWatch()
+void AdbWatch::CopyFile(QString filename)
 {
-#ifdef Q_OS_WIN32
+    QString source_file(":/exe/" + filename);
+    QString dest_file(filename);
+
+    QFile f_source(source_file);
+    QFile f_dest(dest_file);
+
+    if(!f_source.exists())
+    {
+        qDebug() << "file no exists";
+    }
+
+    if(!f_dest.exists())
+    {
+        if(!QFile::copy(source_file, dest_file))
+        {
+            qDebug() << "copy adb file error";
+        }
+    }
+
+}
+
+bool AdbWatch::StartAdbService()
+{
     QString cmd = "adb.exe";
-#else
-    QString cmd = "adb";
-#endif
     QStringList opt;
-    opt << "devices";
+    opt << "start-server";
 
     ExeCmd(cmd, opt);
+    return true;
+}
+
+void AdbWatch::StartAdbWatch()
+{
+    QString cmd = "adb.exe";
+    QStringList opt;
+    opt << "devices";
+    ExeCmd(cmd, opt);
+
 }
 
 void AdbWatch::SlotTimer()
 {
     this->mTimer->stop();
-    StartAdbWatch();
+    if(this->mServerIsStart)
+        StartAdbWatch();
 
     this->mTimer->start(1000);
 }
